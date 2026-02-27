@@ -1,0 +1,17 @@
+---
+title: "Week5b"
+author: "Zihao YU"
+format: html
+editor: visual
+---
+
+# 1.How will I tackle the problem?
+I will incorporate the code from Project 1 and calculate the expected Elo rating for each round. Finally, compute the difference between the actual total and expected total, then extract the top 5 overperformed and underperformed players.
+
+# 2.What data challenges do I anticipate?
+Since B/H/U have no real opponents, expected ratings cannot be calculated for these lines. To avoid errors, consider excluding them from the calculation.
+
+
+source: "https://raw.githubusercontent.com/XxY-coder/Week5b.Y/refs/heads/main/chess_players.csv"
+        "https://github.com/XxY-coder/Week5b.Y/blob/main/tournamentinfo.txt"
+formula source: "https://mattmazzola.medium.com/implementing-the-elo-rating-system-a085f178e065"
