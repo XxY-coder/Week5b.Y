@@ -15,3 +15,226 @@ Since B/H/U have no real opponents, expected ratings cannot be calculated for th
 source: "https://raw.githubusercontent.com/XxY-coder/Week5b.Y/refs/heads/main/chess_players.csv"
         "https://github.com/XxY-coder/Week5b.Y/blob/main/tournamentinfo.txt"
 formula source: "https://mattmazzola.medium.com/implementing-the-elo-rating-system-a085f178e065"
+
+
+# 3.Get the columns
+  The previous few steps are similar to Proj#1, I will keep it and make some changes(no need State).
+
+```{r}
+library(tidyverse)
+library(stringr)
+
+chess.raw <- readLines("https://raw.githubusercontent.com/XxY-coder/data607-Proj.Y/refs/heads/main/tournamentinfo.txt")
+
+head(chess.raw, 20)
+
+chess_df <- chess.raw[-(1:4)]
+chess_df <- chess_df[chess_df != ""]
+
+chess_df <- chess_df[!str_detect(chess_df, "^\\s*-+\\s*$")]
+
+line_n <- which(str_detect(chess_df, "^\\s*\\d+\\s*\\|"))
+line_n
+
+line_odd <- chess_df[line_n]      
+line_even <- chess_df[line_n + 1]   
+
+parse_line1 <-
+  function(x) {
+    parts <-
+      str_split(x, "\\|", simplify = TRUE) |> 
+      as.character()
+    parts <- str_trim(parts)
+    parts <- parts[parts != ""]
+    
+    tibble(
+      player_num   = as.integer(parts[1]),
+      name         = parts[2],
+      total_points = as.numeric(parts[3]),
+      
+      round1       = parts[4],
+      round2       = parts[5],
+      round3       = parts[6],
+      round4       = parts[7],
+      round5       = parts[8],
+      round6       = parts[9],
+      round7       = parts[10]
+  )
+}
+
+line1_df <- 
+  map_dfr(line_odd, parse_line1)
+
+line1_df |> 
+  select(player_num, name, total_points, round1:round7) |>
+  head()
+
+```
+
+
+```{r}
+parse_line2 <- 
+  function(x) {
+    parts <- 
+      str_split(x, "\\|", simplify = TRUE) |>
+      as.character()
+    parts <- str_trim(parts)
+    parts <- parts[parts != ""]
+  
+    pre <- str_match(x, "R:\\s*(\\d{3,4})")[, 2]
+  
+    if (is.na(pre)) pre <- 
+      str_match(x, "(\\d{3,4})\\s*->")[, 2]
+
+    tibble(
+      pre_rating = as.integer(pre)
+      )
+}
+
+line2_df <- 
+  map_dfr(line_even, parse_line2)
+line2_df |> 
+  head()
+```
+
+```{r}
+opp_info <- 
+  line1_df |>
+  select(player_num, starts_with("round")) |>
+  pivot_longer(
+    cols = starts_with("round"),
+    names_to = "round",
+    values_to = "cell"
+) |>
+  mutate(
+    opp_num = as.integer(str_extract(cell, "\\d+")),
+    game_result = str_extract(cell, "^[WDL]"),
+    game_score = case_when(
+      game_result == "W" ~ 1.0,
+      game_result == "D" ~ 0.5,
+      game_result == "L" ~ 0.0,
+      TRUE ~ NA_real_
+    ),
+    cell = NULL
+) |>
+ filter(!is.na(opp_num))
+opp_info
+```
+
+# 4.Recal the total score
+I decide to remove the rounds that are B/H/U.
+
+```{r}
+score_recal <-
+  opp_info |>
+  group_by(player_num) |>
+  summarise(
+  total_rounds = n(),
+  new_total = sum(game_score, na.rm = TRUE)
+)
+score_recal
+```
+
+# 5.Mkake a new table
+
+```{r}
+
+chess_info <- opp_info |>
+  left_join(
+    tibble(player_num = line1_df$player_num, my_rating = line2_df$pre_rating),
+    by = "player_num"
+) |>
+  left_join(
+    tibble(player_num = line1_df$player_num, opp_rating = line2_df$pre_rating),
+    by = c("opp_num" = "player_num")
+) |>
+  left_join(
+    tibble(player_num = score_recal$player_num, new_total = score_recal$new_total),
+    by = "player_num"
+)
+chess_info
+```
+
+# 6. Cal the ELO rating
+
+```{r}
+elo_cal <-
+  chess_info |>
+  mutate(
+    expected_match_score = 1 / (1 + 10^((opp_rating - my_rating) / 400))
+  )
+elo_cal
+```
+
+# 7.Sum the expected score and do the difference.
+
+```{r}
+performance_summary <-
+  elo_cal |>
+  group_by(player_num) |>
+  summarise(
+    Expected_score = sum(expected_match_score, na.rm = TRUE)
+) |>
+  left_join(score_recal |> 
+              select(player_num, new_total), by = "player_num") |>
+  left_join(line1_df |> 
+              select(player_num, name), by = "player_num") |>
+  mutate(Difference = score_recal$new_total - Expected_score) 
+
+performance_summary
+```
+
+
+# 8.Finl coding.
+```{r}
+arrange(performance_summary, desc(Difference))
+```
+
+```{r}
+arrange(performance_summary, (Difference))
+
+```
+
+
+```{r}
+ggplot(
+  performance_summary,
+  aes(x=player_num, y=Expected_score)
+) +
+  geom_line()+
+  geom_smooth(method = "lm")
+```
+
+```{r}
+ggplot(
+  score_recal,
+  aes(x=player_num, y=new_total)
+) +
+  geom_line()+
+  geom_smooth(method = "lm")
+```
+
+```{r}
+ggplot(
+  performance_summary,
+  aes(x=player_num, y=Difference)
+) +
+  geom_line()+
+  geom_smooth(method = "lm")
+```
+
+# 9.Summary
+The top 5 overperformed players are:
+ADITYA BAJAJ
+ZACHARY JAMES HOUGHTON
+ANVIT RAO
+JACOB ALEXANDER LAVALLEY
+STEFANO LEE
+
+-----------------
+And the top 5 underperformed players are:
+LOREN SCHWIEBERT
+GEORGE AVERY JONES
+LARRY HODGE
+JARED GE
+RISHI SHETTY
